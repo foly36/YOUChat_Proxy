@@ -4,6 +4,8 @@ import HappyApiProvider from './happyapi_providers/happyApi.mjs';
 import {config as youConfig} from './config.mjs';
 import {config as perplexityConfig} from './perplexityConfig.mjs';
 
+export {YouProvider, PerplexityProvider, HappyApiProvider};
+
 class ProviderManager {
     constructor() {
         // 根据环境变量初始化提供者

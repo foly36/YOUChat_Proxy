@@ -11,12 +11,12 @@ export function storeImage(base64Data, mediaType) {
     const randomPart = Math.floor(Math.random() * 10000);
     const imageId = `image_${Date.now()}_${imageCounter++}_${randomPart}`;
 
-    imageStorage.set(imageId, { imageId, base64Data, mediaType });
+    imageStorage.set(imageId, {imageId, base64Data, mediaType});
     // console.log(`Image stored with ID: ${imageId}, Media Type: ${mediaType}`);
     // 打印存储的 base64
     // console.log(`Base64 Data for Image ID ${imageId}: ${base64Data.substring(0, 100)}...`);
 
-    return { imageId, mediaType };
+    return {imageId, mediaType};
 }
 
 /**

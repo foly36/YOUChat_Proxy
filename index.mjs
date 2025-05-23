@@ -1,5 +1,5 @@
 import express from "express";
-import {createEvent, getGitRevision} from "./utils.mjs";
+import {createEvent, getGitRevision} from "./utils/cookieUtils.mjs";
 import YouProvider from "./provider.mjs";
 import localtunnel from "localtunnel";
 import ngrok from 'ngrok';
@@ -10,42 +10,16 @@ import fetch from 'node-fetch';
 import path from 'path';
 import geoip from 'geoip-lite';
 import RequestLogger from './requestLogger.mjs';
+import tlsRotator from './utils/tlsRotator.mjs';
+import {fetchWithRetry} from './utils/httpClient.mjs';
+import modelManager from './modelManager.mjs';
 
 const app = express();
 const port = process.env.PORT || 8080;
 const validApiKey = process.env.PASSWORD;
-const availableModels = [
-    "openai_o3_mini_high",
-    "openai_o3_mini_medium",
-    "openai_o1",
-    "openai_o1_preview",
-    "gpt_4_5_preview",
-    "gpt_4o",
-    "gpt_4_turbo",
-    "gpt_4",
-    "claude_3_7_sonnet",
-    "claude_3_7_sonnet_thinking",
-    "claude_3_5_sonnet",
-    "claude_3_opus",
-    "claude_3_sonnet",
-    "claude_3_haiku",
-    "claude_2",
-    "llama3",
-    "gemini_pro",
-    "gemini_1_5_pro",
-    "gemini_1_5_flash",
-    "databricks_dbrx_instruct",
-    "command_r",
-    "command_r_plus",
-    "zephyr",
-    "qwen2p5_72b",
-    "llama3_1_405b",
-    "grok_2",
-    "deepseek_r1",
-    "deepseek_v3"
-];
+
 const modelMappping = {
-    "claude-3-7-sonnet-latest": "claude_3_7_sonnet",
+    "claude-3-7-sonnet-latest": "claude_3_7_sonnet_thinking",
     "claude-3-7-sonnet-20250219": "claude_3_7_sonnet",
     "claude-3-5-sonnet-latest": "claude_3_5_sonnet",
     "claude-3-5-sonnet-20241022": "claude_3_5_sonnet",
@@ -100,6 +74,10 @@ app.use((req, res, next) => {
 app.get("/v1/models", OpenAIApiKeyAuth, (req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // 获取最新可用模型列表
+    const availableModels = modelManager.getAvailableModels();
+
     const models = availableModels.map((model) => {
         return {
             id: model,
@@ -123,19 +101,9 @@ app.post("/v1/chat/completions", OpenAIApiKeyAuth, (req, res) => {
         req.rawBody += chunk;
     });
 
-    // 数据接收完毕后处理请求
     req.on("end", async () => {
-        console.log("处理 OpenAI 格式的请求");
-        res.setHeader("Content-Type", "text/event-stream;charset=utf-8");
-        res.setHeader("Access-Control-Allow-Origin", "*");
-
-        let jsonBody;
-        try {
-            jsonBody = JSON.parse(req.rawBody);
-        } catch (error) {
-            res.status(400).json({error: {code: 400, message: "Invalid JSON"}});
-            return;
-        }
+        const jsonBody = parseRequestBody(req, res, 'openai');
+        if (!jsonBody) return;
 
         // 规范化消息
         jsonBody.messages = await openaiNormalizeMessages(jsonBody.messages);
@@ -146,74 +114,37 @@ app.post("/v1/chat/completions", OpenAIApiKeyAuth, (req, res) => {
         if (jsonBody.model && modelMappping[jsonBody.model]) {
             jsonBody.model = modelMappping[jsonBody.model];
         }
+
+        const availableModels = modelManager.getAvailableModels();
         if (jsonBody.model && !availableModels.includes(jsonBody.model)) {
             res.json({error: {code: 404, message: "Invalid Model"}});
             return;
         }
         console.log("Using model " + jsonBody.model);
 
-        let selectedSession;
-        let releaseSessionCalled = false;
-        let completion;
-        let cancel;
-        let selectedBrowserId;
-        // 定义释放会话
-        const releaseSession = () => {
-            if (selectedSession && selectedBrowserId && !releaseSessionCalled) {
-                sessionManager.releaseSession(selectedSession, selectedBrowserId);
-                console.log(`释放会话 ${selectedSession} 和浏览器实例 ${selectedBrowserId}`);
-                releaseSessionCalled = true;
-            }
-        };
-
-        // 监听客户端关闭事件
-        res.on("close", () => {
-            console.log(" > [Client closed]");
-            clientState.setClosed(true);
-            if (completion) {
-                completion.removeAllListeners();
-            }
-            if (cancel) {
-                cancel();
-            }
-            releaseSession();
-        });
+        // 设置会话管理
+        const sessionManager = setupSession(res);
 
         try {
-            // 获取客户端 IP
-            const clientIpAddress = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-            const geo = geoip.lookup(clientIpAddress) || {};
-            const locationInfo = `${geo.country || 'Unknown'}-${geo.region || 'Unknown'}-${geo.city || 'Unknown'}`;
-            const requestTime = new Date();
+            // 获取客户端信息和会话
+            const {selectedUsername, modeSwitched, browserInstance} =
+                await getClientAndSessionInfo(req, jsonBody.model);
 
-            // 获取并锁定可用会话和浏览器实例
-            const {
-                selectedUsername,
-                modeSwitched,
-                browserInstance
-            } = await sessionManager.getSessionByStrategy('round_robin');
-            selectedSession = selectedUsername;
-            selectedBrowserId = browserInstance.id;
-            console.log("Using session " + selectedSession);
+            // 设置会话信息
+            sessionManager.setSession(selectedUsername, browserInstance.id);
 
-            // 记录请求信息
-            await requestLogger.logRequest({
-                time: requestTime,
-                ip: clientIpAddress,
-                location: locationInfo,
-                model: jsonBody.model,
-                session: selectedSession
-            });
-
-            ({completion, cancel} = await provider.getCompletion({
-                username: selectedSession,
+            const {completion, cancel} = await provider.getCompletion({
+                username: selectedUsername,
                 messages: jsonBody.messages,
                 browserInstance: browserInstance,
                 stream: !!jsonBody.stream,
                 proxyModel: jsonBody.model,
                 useCustomMode: process.env.USE_CUSTOM_MODE === "true",
-                modeSwitched: modeSwitched // 传递模式切换标志
-            }));
+                modeSwitched: modeSwitched
+            });
+
+            // 设置完成对象
+            sessionManager.setCompletion(completion, cancel);
 
             // 监听开始事件
             completion.on("start", (id) => {
@@ -292,7 +223,7 @@ app.post("/v1/chat/completions", OpenAIApiKeyAuth, (req, res) => {
                         })
                     );
                     res.end();
-                    releaseSession();
+                    sessionManager.releaseSession();
                 }
             });
 
@@ -302,8 +233,7 @@ app.post("/v1/chat/completions", OpenAIApiKeyAuth, (req, res) => {
                     res.write(createEvent("data", "[DONE]"));
                     res.end();
                 }
-
-                releaseSession();
+                sessionManager.releaseSession();
             });
 
             // 监听错误事件
@@ -311,123 +241,14 @@ app.post("/v1/chat/completions", OpenAIApiKeyAuth, (req, res) => {
                 console.error("Completion error:", err);
                 const errorMessage = "Error occurred: " + (err.message || "Unknown error");
                 if (!res.headersSent) {
-                    if (jsonBody.stream) {
-                        res.write(
-                            createEvent("data", {
-                                choices: [
-                                    {
-                                        content_filter_results: {
-                                            hate: {filtered: false, severity: "safe"},
-                                            self_harm: {filtered: false, severity: "safe"},
-                                            sexual: {filtered: false, severity: "safe"},
-                                            violence: {filtered: false, severity: "safe"},
-                                        },
-                                        delta: {content: errorMessage},
-                                        finish_reason: null,
-                                        index: 0,
-                                    },
-                                ],
-                                created: Math.floor(new Date().getTime() / 1000),
-                                id: uuidv4(),
-                                model: jsonBody.model,
-                                object: "chat.completion.chunk",
-                                system_fingerprint: "114514",
-                            })
-                        );
-                        res.write(createEvent("data", "[DONE]"));
-                        res.end();
-                    } else {
-                        res.write(
-                            JSON.stringify({
-                                id: uuidv4(),
-                                object: "chat.completion",
-                                created: Math.floor(new Date().getTime() / 1000),
-                                model: jsonBody.model,
-                                system_fingerprint: "114514",
-                                choices: [
-                                    {
-                                        index: 0,
-                                        message: {
-                                            role: "assistant",
-                                            content: errorMessage,
-                                        },
-                                        logprobs: null,
-                                        finish_reason: "stop",
-                                    },
-                                ],
-                                usage: {
-                                    prompt_tokens: 1,
-                                    completion_tokens: 1,
-                                    total_tokens: 1,
-                                },
-                            })
-                        );
-                        res.end();
-                    }
+                    sendOpenAIErrorResponse(res, errorMessage, jsonBody, jsonBody.stream);
                 }
-                releaseSession();
+                sessionManager.releaseSession();
             });
 
         } catch (error) {
-            console.error("Request error:", error);
-            releaseSession();
-
-            const errorMessage = "Error occurred, please check the log.\n\n出现错误，请检查日志：<pre>" + (error.stack || error) + "</pre>";
-            if (!res.headersSent) {
-                if (jsonBody.stream) {
-                    res.write(
-                        createEvent("data", {
-                            choices: [
-                                {
-                                    content_filter_results: {
-                                        hate: {filtered: false, severity: "safe"},
-                                        self_harm: {filtered: false, severity: "safe"},
-                                        sexual: {filtered: false, severity: "safe"},
-                                        violence: {filtered: false, severity: "safe"},
-                                    },
-                                    delta: {content: errorMessage},
-                                    finish_reason: null,
-                                    index: 0,
-                                },
-                            ],
-                            created: Math.floor(new Date().getTime() / 1000),
-                            id: uuidv4(),
-                            model: jsonBody.model,
-                            object: "chat.completion.chunk",
-                            system_fingerprint: "114514",
-                        })
-                    );
-                    res.write(createEvent("data", "[DONE]"));
-                    res.end();
-                } else {
-                    res.write(
-                        JSON.stringify({
-                            id: uuidv4(),
-                            object: "chat.completion",
-                            created: Math.floor(new Date().getTime() / 1000),
-                            model: jsonBody.model,
-                            system_fingerprint: "114514",
-                            choices: [
-                                {
-                                    index: 0,
-                                    message: {
-                                        role: "assistant",
-                                        content: errorMessage,
-                                    },
-                                    logprobs: null,
-                                    finish_reason: "stop",
-                                },
-                            ],
-                            usage: {
-                                prompt_tokens: 1,
-                                completion_tokens: 1,
-                                total_tokens: 1,
-                            },
-                        })
-                    );
-                    res.end();
-                }
-            }
+            handleErrorResponse(res, error, jsonBody, jsonBody.stream, "openai");
+            sessionManager.releaseSession();
         }
     });
 });
@@ -520,7 +341,14 @@ function guessMediaTypeFromUrl(url) {
 // 图片 URL 获取 base64
 async function fetchImageAsBase64(url) {
     try {
-        const response = await fetch(url);
+        // 使用随机化HTTP
+        const response = await fetchWithRetry(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'image/*'
+            }
+        });
+
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         return buffer.toString('base64');
@@ -542,28 +370,33 @@ app.post("/v1/messages", AnthropicApiKeyAuth, (req, res) => {
     });
 
     req.on("end", async () => {
-        console.log("处理 Anthropic 格式的请求");
-        res.setHeader("Content-Type", "text/event-stream;charset=utf-8");
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        let jsonBody;
+        const jsonBody = parseRequestBody(req, res, 'anthropic');
+        if (!jsonBody) return;
 
-        try {
-            jsonBody = JSON.parse(req.rawBody);
-        } catch (error) {
-            res.status(400).json({error: {code: 400, message: "Invalid JSON"}});
-            return;
-        }
+        // 处理messages格式
+        jsonBody.messages = anthropicNormalizeMessages(jsonBody.messages || []);
 
-        // 处理消息格式
-        jsonBody.messages = anthropicNormalizeMessages(jsonBody.messages);
-
+        // 处理system字段
         if (jsonBody.system) {
-            // 把系统消息加入 messages 的首条
-            jsonBody.messages.unshift({role: "system", content: jsonBody.system});
-        }
-        console.log("message length:" + jsonBody.messages.length);
+            let systemContent = '';
+            if (typeof jsonBody.system === 'string') {
+                systemContent = jsonBody.system;
+            }
+            // 处理system为数组
+            else if (Array.isArray(jsonBody.system)) {
+                systemContent = extractTextFromContentArray(jsonBody.system);
+                // 处理system中图片
+                processImageContent(jsonBody.system);
+            }
 
-        // decide which model to use
+            // 将系统消息添加到messages首位
+            if (systemContent) {
+                jsonBody.messages.unshift({role: "system", content: systemContent});
+            }
+        }
+
+        console.log("message length:", jsonBody.messages.length);
+
         let proxyModel;
         if (process.env.AI_MODEL) {
             proxyModel = process.env.AI_MODEL;
@@ -576,73 +409,35 @@ app.post("/v1/messages", AnthropicApiKeyAuth, (req, res) => {
         }
         console.log(`Using model ${proxyModel}`);
 
+        const availableModels = modelManager.getAvailableModels();
         if (proxyModel && !availableModels.includes(proxyModel)) {
             res.json({error: {code: 404, message: "Invalid Model"}});
             return;
         }
 
-        let selectedSession;
-        let releaseSessionCalled = false;
-        let completion;
-        let cancel;
-        let selectedBrowserId;
-        // 定义释放会话
-        const releaseSession = () => {
-            if (selectedSession && selectedBrowserId && !releaseSessionCalled) {
-                sessionManager.releaseSession(selectedSession, selectedBrowserId);
-                console.log(`释放会话 ${selectedSession} 和浏览器实例 ${selectedBrowserId}`);
-                releaseSessionCalled = true;
-            }
-        };
-
-        // 监听客户端关闭事件
-        res.on("close", () => {
-            console.log(" > [Client closed]");
-            clientState.setClosed(true);
-            if (completion) {
-                completion.removeAllListeners();
-            }
-            if (cancel) {
-                cancel();
-            }
-            releaseSession();
-        });
+        // 设置会话管理
+        const sessionManager = setupSession(res);
 
         try {
-            // 获取客户端 IP
-            const clientIpAddress = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-            const geo = geoip.lookup(clientIpAddress) || {};
-            const locationInfo = `${geo.country || 'Unknown'}-${geo.region || 'Unknown'}-${geo.city || 'Unknown'}`;
-            const requestTime = new Date();
+            // 获取客户端信息和会话
+            const {selectedUsername, modeSwitched, browserInstance} =
+                await getClientAndSessionInfo(req, jsonBody.model || proxyModel);
 
-            // 获取并锁定可用会话和浏览器实例
-            const {
-                selectedUsername,
-                modeSwitched,
-                browserInstance
-            } = await sessionManager.getSessionByStrategy('round_robin');
-            selectedSession = selectedUsername;
-            selectedBrowserId = browserInstance.id;
-            console.log("Using session " + selectedSession);
+            // 设置会话信息
+            sessionManager.setSession(selectedUsername, browserInstance.id);
 
-            // 记录请求信息
-            await requestLogger.logRequest({
-                time: requestTime,
-                ip: clientIpAddress,
-                location: locationInfo,
-                model: jsonBody.model,
-                session: selectedSession
-            });
-
-            ({completion, cancel} = await provider.getCompletion({
-                username: selectedSession,
+            const {completion, cancel} = await provider.getCompletion({
+                username: selectedUsername,
                 messages: jsonBody.messages,
                 browserInstance: browserInstance,
                 stream: !!jsonBody.stream,
                 proxyModel: proxyModel,
                 useCustomMode: process.env.USE_CUSTOM_MODE === "true",
-                modeSwitched: modeSwitched // 传递模式切换标志
-            }));
+                modeSwitched: modeSwitched
+            });
+
+            // 设置完成对象
+            sessionManager.setCompletion(completion, cancel);
 
             // 监听开始事件
             completion.on("start", (id) => {
@@ -693,7 +488,7 @@ app.post("/v1/messages", AnthropicApiKeyAuth, (req, res) => {
                         usage: {input_tokens: 0, output_tokens: 0},
                     }));
                     res.end();
-                    releaseSession();
+                    sessionManager.releaseSession();
                 }
             });
 
@@ -709,7 +504,7 @@ app.post("/v1/messages", AnthropicApiKeyAuth, (req, res) => {
                     res.write(createEvent("message_stop", {type: "message_stop"}));
                     res.end();
                 }
-                releaseSession();
+                sessionManager.releaseSession();
             });
 
             // 监听错误事件
@@ -718,85 +513,451 @@ app.post("/v1/messages", AnthropicApiKeyAuth, (req, res) => {
                 // 向客户端返回错误信息
                 const errorMessage = "Error occurred: " + (err.message || "Unknown error");
                 if (!res.headersSent) {
-                    if (jsonBody.stream) {
-                        res.write(createEvent("content_block_delta", {
-                            type: "content_block_delta",
-                            index: 0,
-                            delta: {type: "text_delta", text: errorMessage},
-                        }));
-                        res.end();
-                    } else {
-                        res.write(JSON.stringify({
-                            id: uuidv4(),
-                            content: [{text: errorMessage}, {id: "string", name: "string", input: {}}],
-                            model: proxyModel,
-                            stop_reason: "error",
-                            stop_sequence: null,
-                            usage: {input_tokens: 0, output_tokens: 0},
-                        }));
-                        res.end();
-                    }
+                    sendAnthropicErrorResponse(res, errorMessage, jsonBody, jsonBody.stream);
                 }
-                releaseSession();
+                sessionManager.releaseSession();
             });
 
         } catch (error) {
-            console.error("Request error:", error);
-            releaseSession();
-
-            const errorMessage = "Error occurred, please check the log.\n\n出现错误，请检查日志：<pre>" + (error.stack || error) + "</pre>";
-            if (!res.headersSent) {
-                if (jsonBody.stream) {
-                    res.write(createEvent("content_block_delta", {
-                        type: "content_block_delta",
-                        index: 0,
-                        delta: {type: "text_delta", text: errorMessage},
-                    }));
-                    res.end();
-                } else {
-                    res.write(JSON.stringify({
-                        id: uuidv4(),
-                        content: [{text: errorMessage}, {id: "string", name: "string", input: {}}],
-                        model: proxyModel,
-                        stop_reason: "error",
-                        stop_sequence: null,
-                        usage: {input_tokens: 0, output_tokens: 0},
-                    }));
-                    res.end();
-                }
-            }
+            handleErrorResponse(res, error, jsonBody, jsonBody.stream, "anthropic");
+            sessionManager.releaseSession();
         }
     });
 });
 
-// 辅助函数：规范化消息格式
+/**
+ * 规范化Anthropic消息格式
+ * @param {array} messages 消息数组
+ * @returns {array} 处理后
+ */
 function anthropicNormalizeMessages(messages) {
+    if (!Array.isArray(messages)) {
+        console.warn('Messages is not an array:', messages);
+        return [];
+    }
+
     return messages.map(message => {
         if (typeof message.content === 'string') {
             return message;
         } else if (Array.isArray(message.content)) {
             // 提取文本内容
-            const textContent = message.content
-                .filter(item => item.type === 'text')
-                .map(item => item.text)
-                .join('\n');
+            const textContent = extractTextFromContentArray(message.content);
 
-            // 处理图片内容，存储图片
-            message.content.forEach(item => {
-                if (item.type === 'image' && item.source?.type === 'base64') {
-                    const {imageId, mediaType} = storeImage(item.source.data, item.source.media_type);
-                    console.log(`Image stored with ID: ${imageId}, Media Type: ${mediaType}`);
-                }
-            });
+            // 处理图片
+            processImageContent(message.content);
 
             return {...message, content: textContent};
         } else {
-            console.warn('Unknown message format:', message);
-            return message; // 未知格式，返回原始消息
+            console.warn('Unknown message content format:', message);
+            // 尝试转换为字符串
+            return {...message, content: String(message.content || '')};
         }
     });
 }
 
+/**
+ * 从内容数组提取所有文本
+ * @param {array|object} content
+ * @returns {string} 合并后文本
+ */
+function extractTextFromContentArray(content) {
+    // 处理空值
+    if (!content) return '';
+
+    if (typeof content === 'string') return content;
+
+    // 处理文本
+    if (typeof content === 'object' && content.type === 'text' && content.text) {
+        return content.text;
+    }
+
+    // 处理数组
+    if (Array.isArray(content)) {
+        return content.map(item => extractTextFromContentArray(item))
+            .filter(text => text) // 过滤空值
+            .join('\n');
+    }
+
+    // 处理其他
+    if (typeof content === 'object') {
+        if (content.text && typeof content.text === 'string') {
+            return content.text;
+        }
+
+        return Object.values(content)
+            .map(value => extractTextFromContentArray(value))
+            .filter(text => text)
+            .join('\n');
+    }
+
+    // 其他情况
+    return String(content || '');
+}
+
+/**
+ * 处理内容中的图片
+ * @param {array} contentArray
+ */
+function processImageContent(contentArray) {
+    if (!Array.isArray(contentArray)) return;
+
+    contentArray.forEach(item => {
+        // 处理image类型
+        if (item.type === 'image' && item.source?.type === 'base64') {
+            const {imageId, mediaType} = storeImage(item.source.data, item.source.media_type);
+            console.log(`Image stored with ID: ${imageId}, Media Type: ${mediaType}`);
+        }
+
+        // 处理image_url类型
+        if (item.type === 'image_url' && item.image_url?.url) {
+            (async () => {
+                try {
+                    const mediaType = await getMediaTypeFromUrl(item.image_url.url);
+                    const base64Data = await fetchImageAsBase64(item.image_url.url);
+                    if (base64Data) {
+                        const {imageId} = storeImage(base64Data, mediaType);
+                        console.log(`Image stored with ID: ${imageId}, Media Type: ${mediaType}`);
+                    }
+                } catch (error) {
+                    console.error('Failed to process image from URL:', error);
+                }
+            })();
+        }
+
+        // 递归
+        if (Array.isArray(item)) {
+            processImageContent(item);
+        }
+    });
+}
+
+/**
+ * 会话管理和释放
+ * @param {object} res - Express响应对象
+ * @returns {object} 会话管理
+ */
+function setupSession(res) {
+    let selectedSession = null;
+    let selectedBrowserId = null;
+    let releaseSessionCalled = false;
+    let completion = null;
+    let cancel = null;
+    let sessionStartTime = Date.now();
+
+    // 获取会话
+    const getSession = () => selectedSession;
+    const getSessionDuration = () => {
+        return selectedSession ? `${Math.round((Date.now() - sessionStartTime) / 1000)}秒` : '0秒';
+    };
+    const isReleased = () => releaseSessionCalled;
+
+    const releaseSession = () => {
+        try {
+            // 避免重复释放
+            if (selectedSession && selectedBrowserId && !isReleased()) {
+                const sessionId = getSession();
+                sessionManager.releaseSession(sessionId, selectedBrowserId);
+                console.log(`释放会话 ${sessionId} 和浏览器实例 ${selectedBrowserId}, 持续时间: ${getSessionDuration()}`);
+                releaseSessionCalled = true;
+            }
+        } catch (error) {
+            console.error(`释放会话 ${getSession() || '未知'} 时出错: ${error.message}`);
+        }
+    };
+
+    // 监听客户端关闭事件
+    res.on("close", () => {
+        const sessionId = getSession();
+        console.log(` > [Client closed]`);
+        clientState.setClosed(true);
+        try {
+            if (completion) {
+                completion.removeAllListeners();
+            }
+            if (cancel) {
+                cancel();
+            }
+        } catch (error) {
+            console.error(`会话 ${sessionId || '未知'} 清理资源时出错: ${error.message}`);
+        } finally {
+            releaseSession();
+        }
+    });
+
+    return {
+        setSession: (username, browserId) => {
+            if (isReleased()) {
+                return;
+            }
+            selectedSession = username;
+            selectedBrowserId = browserId;
+            sessionStartTime = Date.now();
+        },
+        setCompletion: (comp, cancelFn) => {
+            if (isReleased()) {
+                return;
+            }
+            completion = comp;
+            cancel = cancelFn;
+        },
+        releaseSession,
+        getSession,
+        getSessionDuration,
+        isReleased // 用于外部状态检查
+    };
+}
+
+/**
+ * 获取客户端信息分配会话
+ * @param {object} req - Express请求对象
+ * @param {string} model - 模型名称
+ * @returns {Promise<object>} 包含会话信息对象
+ */
+async function getClientAndSessionInfo(req, model) {
+    // 获取IP
+    const clientIpAddress = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const geo = geoip.lookup(clientIpAddress) || {};
+    const locationInfo = `${geo.country || 'Unknown'}-${geo.region || 'Unknown'}-${geo.city || 'Unknown'}`;
+    const requestTime = new Date();
+
+    // 锁定可用会话和浏览器实例
+    const {
+        selectedUsername,
+        modeSwitched,
+        browserInstance
+    } = await sessionManager.getSessionByStrategy('round_robin');
+
+    console.log(`Using session ${selectedUsername}`);
+
+    // 记录
+    await requestLogger.logRequest({
+        time: requestTime,
+        ip: clientIpAddress,
+        location: locationInfo,
+        model: model,
+        session: selectedUsername
+    });
+
+    return {
+        selectedUsername,
+        modeSwitched,
+        browserInstance
+    };
+}
+
+/**
+ * 处理错误响应
+ * @param {object} res - Express响应对象
+ * @param {Error} error - 错误对象
+ * @param {object} jsonBody - 请求体JSON
+ * @param {boolean} isStream - 是否流式
+ * @param {string} apiType - API类型 ('openai' 或 'anthropic')
+ */
+function handleErrorResponse(res, error, jsonBody, isStream, apiType) {
+    console.error("Request error:", error);
+    const errorMessage = "Error occurred, please check the log.\n\n出现错误，请检查日志：<pre>" + (error.stack || error) + "</pre>";
+
+    if (!res.headersSent) {
+        if (apiType === "openai") {
+            sendOpenAIErrorResponse(res, errorMessage, jsonBody, isStream);
+        } else if (apiType === "anthropic") {
+            sendAnthropicErrorResponse(res, errorMessage, jsonBody, isStream);
+        }
+    }
+}
+
+/**
+ * OpenAI格式的错误响应
+ * @param {object} res - Express响应对象
+ * @param {string} errorMessage - 错误信息
+ * @param {object} jsonBody - 请求体JSON
+ * @param {boolean} isStream - 是否流式
+ */
+function sendOpenAIErrorResponse(res, errorMessage, jsonBody, isStream) {
+    if (isStream) {
+        res.write(
+            createEvent("data", {
+                choices: [
+                    {
+                        content_filter_results: {
+                            hate: {filtered: false, severity: "safe"},
+                            self_harm: {filtered: false, severity: "safe"},
+                            sexual: {filtered: false, severity: "safe"},
+                            violence: {filtered: false, severity: "safe"},
+                        },
+                        delta: {content: errorMessage},
+                        finish_reason: null,
+                        index: 0,
+                    },
+                ],
+                created: Math.floor(new Date().getTime() / 1000),
+                id: uuidv4(),
+                model: jsonBody.model,
+                object: "chat.completion.chunk",
+                system_fingerprint: "114514",
+            })
+        );
+        res.write(createEvent("data", "[DONE]"));
+    } else {
+        res.write(
+            JSON.stringify({
+                id: uuidv4(),
+                object: "chat.completion",
+                created: Math.floor(new Date().getTime() / 1000),
+                model: jsonBody.model,
+                system_fingerprint: "114514",
+                choices: [
+                    {
+                        index: 0,
+                        message: {
+                            role: "assistant",
+                            content: errorMessage,
+                        },
+                        logprobs: null,
+                        finish_reason: "stop",
+                    },
+                ],
+                usage: {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 1,
+                },
+            })
+        );
+    }
+    res.end();
+}
+
+/**
+ * Anthropic格式错误响应
+ * @param {object} res - Express响应对象
+ * @param {string} errorMessage - 错误信息
+ * @param {object} jsonBody - 请求体JSON
+ * @param {boolean} isStream - 是否流式
+ */
+function sendAnthropicErrorResponse(res, errorMessage, jsonBody, isStream) {
+    if (isStream) {
+        res.write(createEvent("content_block_delta", {
+            type: "content_block_delta",
+            index: 0,
+            delta: {type: "text_delta", text: errorMessage},
+        }));
+    } else {
+        res.write(JSON.stringify({
+            id: uuidv4(),
+            content: [{text: errorMessage}, {id: "string", name: "string", input: {}}],
+            model: jsonBody.model || "claude_3_opus",
+            stop_reason: "error",
+            stop_sequence: null,
+            usage: {input_tokens: 0, output_tokens: 0},
+        }));
+    }
+    res.end();
+}
+
+/**
+ * 解析和验证请求体
+ * @param {object} req - Express请求对象
+ * @param {object} res - Express响应对象
+ * @param {string} apiType - API类型（'openai'或'anthropic'）
+ * @returns {object|null} - 解析后JSON对象，出错返回null
+ */
+function parseRequestBody(req, res, apiType) {
+    const apiName = apiType === 'openai' ? 'OpenAI' : 'Anthropic';
+    console.log(`处理 ${apiName} 格式的请求`);
+
+    // 设置通用响应头
+    res.setHeader("Content-Type", "text/event-stream;charset=utf-8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // 检查请求体是否为空
+    if (!req.rawBody || req.rawBody.trim() === '') {
+        logRequestError(req, `${apiName} request body is empty`);
+        sendErrorResponse(res, 400, "Request body cannot be empty", apiType);
+        return null;
+    }
+
+    try {
+        // 尝试解析JSON
+        return JSON.parse(req.rawBody);
+    } catch (error) {
+        // 记录解析错误
+        logJsonParseError(req, error, apiType);
+
+        // Send error response
+        sendErrorResponse(res, 400, "Invalid JSON format", apiType);
+        return null;
+    }
+}
+
+/**
+ * 记录请求错误
+ * @param {object} req - Express请求对象
+ * @param {string} message - 错误消息
+ */
+function logRequestError(req, message) {
+    const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    console.error({
+        Timestamp: new Date().toLocaleString(),
+        Message: message,
+        IP_Address: clientIp,
+        Path: req.path,
+        Method: req.method,
+        Headers: req.headers
+    });
+}
+
+/**
+ * 记录JSON解析错误
+ * @param {object} req - Express请求对象
+ * @param {Error} error - 错误对象
+ * @param {string} apiType - API类型
+ */
+function logJsonParseError(req, error, apiType) {
+    const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const truncatedBody = req.rawBody.length > 200 ?
+        `${req.rawBody.substring(0, 200)}... (Total length: ${req.rawBody.length})` :
+        req.rawBody;
+
+    console.error(`JSON parsing error [${apiType}]:`, {
+        Timestamp: new Date().toLocaleString(),
+        IP_Address: clientIp,
+        Error_Type: error.name,
+        Error_Message: error.message,
+        Request_Body_Summary: truncatedBody,
+        Path: req.path
+    });
+}
+
+/**
+ * 发送格式化错误响应
+ * @param {object} res - Express响应对象
+ * @param {number} statusCode - HTTP状态码
+ * @param {string} message - 错误消息
+ * @param {string} apiType - API类型
+ */
+function sendErrorResponse(res, statusCode, message, apiType) {
+    let errorResponse;
+
+    if (apiType === 'openai') {
+        errorResponse = {
+            error: {
+                code: statusCode,
+                message: message,
+                type: "invalid_request_error"
+            }
+        };
+    } else {
+        errorResponse = {
+            error: {
+                type: "invalid_request_error",
+                message: message
+            }
+        };
+    }
+
+    res.status(statusCode).json(errorResponse);
+}
 
 // handle other
 app.use((req, res, next) => {
@@ -871,6 +1032,11 @@ app.listen(port, async () => {
     // 输出当前月份的请求统计信息
     provider.getLogger().printStatistics();
     console.log(`YouChat proxy listening on port ${port}`);
+    // 启动TLS轮换服务
+    tlsRotator.start();
+    // 模型列表自动更新
+    modelManager.startAutoRefresh(2 * 60 * 60 * 1000);
+
     if (!validApiKey) {
         console.log(`Proxy is currently running with no authentication`);
     }
@@ -880,6 +1046,10 @@ app.listen(port, async () => {
     if (process.env.ENABLE_TUNNEL === "true") {
         const tunnelType = process.env.TUNNEL_TYPE || "localtunnel";
         await createTunnel(tunnelType, port);
+    }
+    if (!global.gc) {
+        console.warn('建议使用 --expose-gc 标志启动you代理以启用垃圾回收');
+        console.warn('命令示例: node --expose-gc index.mjs');
     }
 });
 
@@ -909,7 +1079,7 @@ function OpenAIApiKeyAuth(req, res, next) {
     next();
 }
 
-// Path: utils.mjs
+// Path: cookieUtils.mjs
 class ClientState {
     #closed = false;
 

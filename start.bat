@@ -1,22 +1,97 @@
 @echo off
 
+REM ÉèÖÃ https_proxy ´úÀí£¬¿ÉÒÔÊ¹ÓÃ±¾µØµÄsocks5»òhttp(s)´úÀí
+REM Ê¹ÓÃ HTTP ´úÀí£ºexport https_proxy=http://127.0.0.1:7890
+REM ´øÈÏÖ¤µÄSOCKS5´úÀí
+REM export https_proxy="socks5://username:password@127.0.0.1:1080"
+REM ²»´øÈÏÖ¤µÄSOCKS5´úÀí
+REM export https_proxy="socks5://127.0.0.1:1080"
+REM HTTP´úÀí
+REM export https_proxy="http://username:password@127.0.0.1:8080"
+set http_proxy=
+set https_proxy=
+
 REM °²×°ÒÀÀµ°ü
 call npm install
 
 REM ÉèÖÃ´úÀíµÄÍøÕ¾£ºyou¡¢perplexity¡¢happyapi
 set ACTIVE_PROVIDER=you
 
-REM ÉèÖÃÖ¸¶¨ä¯ÀÀÆ÷,¿ÉÒÔÊÇ 'chrome', 'edge' »ò 'auto'
+REM ÉèÖÃÖ¸¶¨ä¯ÀÀÆ÷,¿ÉÒÔÊÇ 'Chromium', 'chrome', 'edge' »ò 'auto'
 set BROWSER_TYPE=auto
 
+REM ÉèÖÃÊÇ·ñ×Ô¶¯ÏÂÔØChromium
+set AUTO_DOWNLOAD_CHROMIUM=false
+
 REM ÉèÖÃÊÇ·ñÆôÓÃÊÖ¶¯µÇÂ¼
-set USE_MANUAL_LOGIN=true
+set USE_MANUAL_LOGIN=false
 
 REM ÉèÖÃÊÇ·ñÒþ²Øä¯ÀÀÆ÷ (ÉèÖÃä¯ÀÀÆ÷ÊµÀý½Ï´óÊ±£¬½¨ÒéÉèÖÃÎªtrue) (Ö»ÓÐÔÚ`USE_MANUAL_LOGIN=false`Ê±²ÅÓÐÐ§)
 set HEADLESS_BROWSER=true
 
+REM ÊÇ·ñ¿ªÆôCookie³Ö¾ÃÄ£Ê½ (·ÇÊÖ¶¯µÇÂ¼ÏÂ¶àcookieÐèÒªÔö¼Óä¯ÀÀÆ÷ÊµÀýÊýÁ¿)
+set COOKIE_PERSISTENCE_MODE=false
+
 REM ÉèÖÃÆô¶¯ä¯ÀÀÆ÷ÊµÀýÊýÁ¿(·Ç²¢·¢³¡¾°ÏÂ£¬½¨ÒéÉèÖÃ1)
 set BROWSER_INSTANCE_COUNT=1
+
+REM -----·ÀÌØÕ÷¿ªÊ¼-----
+REM TLSÂÖ»»¼ä¸ô£¨Ð¡Ê±£©
+set TLS_ROTATION_INTERVAL=2
+REM ÊÇ·ñËæ»úTLSÂÖ»»¼ä¸ô
+set TLS_RANDOMIZE_INTERVAL=true
+REM ÊÇ·ñÆôÓÃÖ¸ÎÆÂÖ»»
+set ENABLE_FINGERPRINT_ROTATION=true
+REM Ö¸ÎÆÂÖ»»¼ä¸ô£¨Ð¡Ê±£©
+set FINGERPRINT_ROTATION_INTERVAL=6
+REM ÊÇ·ñ¿ªÆôÄ£Äâ·ÃÎÊÀúÊ·(½µµÍÌØÕ÷,»áÔö¼ÓÇëÇóÑÓ³Ù)
+set ENABLE_FAKE_HISTORY=false
+REM Ç¿ÖÆ¶àÕËºÅÄ£Ê½ (¿ªÆôCookie³Ö¾ÃÄ£Ê½Ê±Ê§Ð§)
+set FORCE_MULTI_SESSION_MODE=true
+REM ¶ÁÈ¡config.mjs, cookieÄ£Ê½Ê¹ÓÃËæ»úUUID
+set FORCE_REGEN_UUID=true
+REM ÉèÖÃÇ¿ÖÆ¹Ì¶¨µÚÒ»¾ä»°
+set FORCE_FILE_UPLOAD_QUERY=false
+REM ÊÇ·ñÆôÓÃÒþÉíÄ£Ê½
+set INCOGNITO_MODE=true
+REM ---------------------------------------------------
+REM ¿ØÖÆÊÇ·ñÔÚ¿ªÍ·²åÈëÂÒÂë
+set ENABLE_GARBLED_START=false
+REM ÉèÖÃ¿ªÍ·²åÈëÂÒÂë×îÐ¡³¤¶È
+set GARBLED_START_MIN_LENGTH=1000
+REM ÉèÖÃ¿ªÍ·²åÈëÂÒÂë×î´ó³¤¶È
+set GARBLED_START_MAX_LENGTH=5000
+REM ÉèÖÃ½áÎ²²åÈëÂÒÂë¹Ì¶¨³¤¶È
+set GARBLED_END_LENGTH=500
+REM ¿ØÖÆÊÇ·ñÔÚ½áÎ²²åÈëÂÒÂë
+set ENABLE_GARBLED_END=false
+REM ---------------------------------------------------
+REM -----·ÀÌØÕ÷½áÊø-----
+
+REM -----ÄÚ´æ×Ô¶¯ÇåÀí¼à¿ØÅäÖÃ-----
+REM ¼ì²é¼ä¸ôÊ±¼ä(µ¥Î»: ·ÖÖÓ)
+set MEMORY_CHECK_INTERVAL=60
+REM ÄÚ´æÇåÀíãÐÖµ, ¸ù¾ÝÉèÖÃ²¢·¢ÊÊµ±µ÷Õû(µ¥Î»: MB)
+set HEAP_WARNING_THRESHOLD=8192
+REM ÉèÖÃ´ïµ½Ö¸¶¨ÄÚ´æãÐÖµ×Ô¶¯ÇåÀí
+set AUTO_GC_ON_HIGH_MEMORY=false
+
+REM -----½¡¿µ¼ì²éÅäÖÃ-----
+REM ÊÇ·ñÆôÓÃä¯ÀÀÆ÷×Ô¶¯½¡¿µ¼ì²é(ä¯ÀÀÆ÷ÒâÍâ¹Ø±Õ/Òì³£Ê±×Ô¶¯ÖØÆô)
+set ENABLE_HEALTH_CHECK=false
+REM ½¡¿µ¼ì²é¼ä¸ô(·ÖÖÓ)
+set HEALTH_CHECK_INTERVAL=10
+REM ÇëÇóÇ°Ö´ÐÐ½¡¿µ¼ì²é
+set HEALTH_CHECK_BEFORE_LOCK=true
+
+REM ÉèÖÃ×Ô¶¯»ñÈ¡Ä£ÐÍÁÐ±í¹þÏ£Öµ
+REM »ñÈ¡·½·¨: you.comÒ³Ãæ, °´f12£¬ÇÐ»»'ÍøÂç(network)', ÈÎÒâÑ¡ÔñÒ»¸öÄ£ÐÍ·¢ËÍÇëÇó£¬ÔÚµÚ4ÁÐ(ÎÄ¼þ file)
+REM ÕÒµ½ÀàËÆ: `_next/data/`¿ªÍ·: `_next/data/0eae4547518d0f954439be9efdaae87c915b8921/en-US/search.json?q...`ÍøÖ· (¿ÉÒÔÓÃËÑË÷É¸Ñ¡)
+REM ½«`0eae4547518d0f954439be9efdaae87c915b8921`ÌîÈë`YOU_BUILD_HASH`£¬×¢Òâ²»ÒªÓÐ¿Õ¸ñ¡£
+set YOU_BUILD_HASH=
+
+REM ÉèÖÃ¿ªÆô<think>ÄÚÖÃË¼¿¼´«Êä
+set ENABLE_THINKING_CHAIN=true
 
 REM ÉèÖÃ»á»°×Ô¶¯ÊÍ·ÅÊ±¼ä(µ¥Î»:Ãë) (0=½ûÓÃ×Ô¶¯ÊÍ·Å)
 set SESSION_LOCK_TIMEOUT=180
@@ -64,11 +139,7 @@ REM Ê¹ÓÃ´Ë¹¦ÄÜÇ°£¬ÇëÈ·±£ÒÑÔÚ ngrok ÒÇ±í°åÖÐÌí¼Ó²¢ÑéÖ¤ÁË¸ÃÓòÃû¡£
 REM ¸ñÊ½Ê¾Àý£ºyour-custom-domain.com
 REM Èç¹ûÊ¹ÓÃÃâ·ÑÕË»§»ò²»ÏëÊ¹ÓÃ×Ô¶¨ÒåÓòÃû£¬Çë½«´ËÏîÁô¿Õ¡£
 set NGROK_CUSTOM_DOMAIN=
-
-REM ÉèÖÃ https_proxy ´úÀí£¬¿ÉÒÔÊ¹ÓÃ±¾µØµÄsocks5»òhttp(s)´úÀí
-REM ÀýÈç£¬Ê¹ÓÃ HTTP ´úÀí£ºexport https_proxy=http://127.0.0.1:7890
-REM »òÕßÊ¹ÓÃ SOCKS5 ´úÀí£ºexport https_proxy=socks5://host:port:username:password
-set https_proxy=
+set NGROK_SUBDOMAIN=
 
 REM ÉèÖÃ PASSWORD APIÃÜÂë
 set PASSWORD=
@@ -87,33 +158,17 @@ REM Ö»ÓÐµ± USE_CUSTOM_MODE ºÍ ENABLE_MODE_ROTATION ¶¼ÉèÖÃÎª true Ê±£¬²Å»áÆôÓÃÄ£Ê
 REM ¿ÉÒÔÔÚ×Ô¶¨ÒåÄ£Ê½ºÍÄ¬ÈÏÄ£Ê½Ö®¼ä¶¯Ì¬ÇÐ»»
 set ENABLE_MODE_ROTATION=false
 
-REM ÊÇ·ñÆôÓÃÒþÉíÄ£Ê½
-set INCOGNITO_MODE=false
-
 REM ÉèÖÃÎ±ÔìÕærole (Èç¹ûÆôÓÃ£¬±ØÐëÊ¹ÓÃtxt¸ñÊ½ÉÏ´«)
 set USE_BACKSPACE_PREFIX=false
 
-REM ÉèÖÃÉÏ´«ÎÄ¼þ¸ñÊ½ (docx »ò txt) gpt_4o Ê¹ÓÃtxt¿ÉÄÜ¸üºÃÆÆÏÞ
-set UPLOAD_FILE_FORMAT=txt
+REM ÉèÖÃÉÏ´«ÎÄ¼þ¸ñÊ½ docx | txt | json
+set UPLOAD_FILE_FORMAT=docx
 
 REM ÉèÖÃÊÇ·ñÆôÓÃ CLEWD ºó´¦Àí
 set CLEWD_ENABLED=false
 
-REM ---------------------------------------------------
-REM ¿ØÖÆÊÇ·ñÔÚ¿ªÍ·²åÈëÂÒÂë
-set ENABLE_GARBLED_START=false
-REM ÉèÖÃ¿ªÍ·²åÈëÂÒÂë×îÐ¡³¤¶È
-set GARBLED_START_MIN_LENGTH=1000
-REM ÉèÖÃ¿ªÍ·²åÈëÂÒÂë×î´ó³¤¶È
-set GARBLED_START_MAX_LENGTH=5000
-REM ÉèÖÃ½áÎ²²åÈëÂÒÂë¹Ì¶¨³¤¶È
-set GARBLED_END_LENGTH=500
-REM ¿ØÖÆÊÇ·ñÔÚ½áÎ²²åÈëÂÒÂë
-set ENABLE_GARBLED_END=false
-REM ---------------------------------------------------
-
 REM ÔËÐÐ Node.js Ó¦ÓÃ³ÌÐò
-node index.mjs
+node --expose-gc index.mjs
 
 REM ÔÝÍ£½Å±¾Ö´ÐÐ,µÈ´ýÓÃ»§°´ÈÎÒâ¼üÍË³ö
 pause

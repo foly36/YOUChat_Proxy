@@ -9,24 +9,29 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "async-mutex": "^0.5.0",
     "cookie": "^0.6.0",
+    "cookie-parser": "^1.4.7",
+    "crypto-js": "^4.2.0",
+    "dayjs": "^1.11.13",
     "docx": "^8.5.0",
     "express": "^4.19.2",
     "form-data": "^4.0.0",
-    "puppeteer-real-browser": "1.2.22",
-    "puppeteer-core": "^23.10.4",
-    "uuid": "^9.0.1",
-    "localtunnel": "^2.0.2",
-    "socks-proxy-agent": "^8.0.4",
+    "geoip-lite": "^1.4.10",
     "https-proxy-agent": "^7.0.5",
+    "localtunnel": "^2.0.2",
     "ngrok": "^5.0.0-beta.2",
     "node-fetch": "^3.3.2",
+    "puppeteer-core": "^24.4.0",
+    "puppeteer-real-browser": "^1.4.2",
     "socket.io-client": "^4.8.0",
-    "crypto-js": "^4.2.0",
-    "async-mutex": "^0.5.0",
-    "geoip-lite": "^1.4.10",
-    "cookie-parser": "^1.4.7",
+    "socks-proxy-agent": "^8.0.4",
+    "unzipper": "^0.12.3",
+    "uuid": "^9.0.1",
     "winston": "^3.17.0",
-    "dayjs": "^1.11.13"
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.51.0"
   }
 }

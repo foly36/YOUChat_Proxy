@@ -1,5 +1,5 @@
 import dns from 'dns';
-import { EventEmitter } from 'events';
+import {EventEmitter} from 'events';
 
 class NetworkMonitor extends EventEmitter {
     constructor() {

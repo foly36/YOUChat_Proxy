@@ -3,7 +3,7 @@ import {connect} from "puppeteer-real-browser";
 import {v4 as uuidV4} from "uuid";
 import path from "path";
 import {fileURLToPath} from "url";
-import {createDirectoryIfNotExists, sleep} from "../utils.mjs";
+import {createDirectoryIfNotExists, sleep} from "../utils/cookieUtils.mjs";
 import '../proxyAgent.mjs';
 import NetworkMonitor from "../networkMonitor.mjs";
 import {detectBrowser} from "../utils/browserDetector.mjs";
@@ -187,7 +187,7 @@ class HappyApiProvider {
                     emitter.emit('error', new Error('请求超时'));
                     cleanup();
                 }
-            }, 60000);
+            }, 60000); // 60秒，可根据需要调整
 
             const responseHandler = async (response) => {
                 if (response.url() === targetUrl) {
@@ -253,7 +253,8 @@ class HappyApiProvider {
             emitter.emit('error', error);
             return {
                 completion: emitter,
-                cancel: () => { }
+                cancel: () => {
+                }
             };
         }
     }

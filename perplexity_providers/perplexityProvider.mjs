@@ -1,11 +1,16 @@
-import { EventEmitter } from "events";
-import { connect } from "puppeteer-real-browser";
-import { v4 as uuidV4 } from "uuid";
+import {EventEmitter} from "events";
+import {connect} from "puppeteer-real-browser";
+import {v4 as uuidV4} from "uuid";
 import path from "path";
-import { fileURLToPath } from "url";
-import { createDirectoryIfNotExists, sleep, extractPerplexityCookie, getPerplexitySessionCookie } from "../utils.mjs";
+import {fileURLToPath} from "url";
+import {
+    createDirectoryIfNotExists,
+    extractPerplexityCookie,
+    getPerplexitySessionCookie,
+    sleep
+} from "../utils/cookieUtils.mjs";
 import '../proxyAgent.mjs';
-import { detectBrowser } from '../utils/browserDetector.mjs';
+import {detectBrowser} from '../utils/browserDetector.mjs';
 import NetworkMonitor from '../networkMonitor.mjs';
 import io from 'socket.io-client';
 
@@ -16,15 +21,16 @@ class PerplexityProvider {
     constructor(config) {
         this.config = config;
         this.sessions = {};
+        // 可以是 'chrome', 'edge', 或 'auto'
         this.preferredBrowser = 'auto';
         this.networkMonitor = new NetworkMonitor();
     }
 
     async init(config) {
         console.log(`本项目依赖Chrome或Edge浏览器，请勿关闭弹出的浏览器窗口。如果出现错误请检查是否已安装Chrome或Edge浏览器。`);
-        
+
         const browserPath = detectBrowser(this.preferredBrowser); // 检测Chrome和Edge浏览器
-        
+
         this.sessions = {};
         const timeout = 120000;
 
@@ -77,7 +83,7 @@ class PerplexityProvider {
                     await page.goto("https://www.perplexity.ai", {timeout: timeout});
                     await sleep(3000);
                     console.log(`请在打开的浏览器窗口中手动登录 Perplexity.ai (session #${session.configIndex})`);
-                    const { sessionCookie, accountStatus } = await this.waitForManualLogin(page);
+                    const {sessionCookie, accountStatus} = await this.waitForManualLogin(page);
                     if (sessionCookie) {
                         const email = accountStatus.username || 'unknown_user';
                         this.sessions[email] = {
@@ -156,7 +162,7 @@ class PerplexityProvider {
     async checkAccountStatus(page) {
         if (process.env.USE_MANUAL_LOGIN !== "true" && process.env.INCOGNITO_MODE === "true") {
             try {
-                await page.waitForSelector('div[class*="inline-flex w-full cursor-pointer select-none items-center justify-start gap-sm rounded-full"]', { timeout: 2000 });
+                await page.waitForSelector('div[class*="inline-flex w-full cursor-pointer select-none items-center justify-start gap-sm rounded-full"]', {timeout: 2000});
 
                 // 检查无痕模式图标
                 const isIncognito = await page.evaluate(() => {
@@ -165,16 +171,16 @@ class PerplexityProvider {
                 });
 
                 if (isIncognito) {
-                    return { isPro: false, username: 'Incognito User', isIncognito: true };
+                    return {isPro: false, username: 'Incognito User', isIncognito: true};
                 } else {
-                    return { isPro: false, username: null, isIncognito: false };
+                    return {isPro: false, username: null, isIncognito: false};
                 }
             } catch (error) {
-                return { isPro: false, username: null, isIncognito: false };
+                return {isPro: false, username: null, isIncognito: false};
             }
         } else {
             try {
-                await page.waitForSelector('div[class*="relative flex items-center gap-x-xs"]', { timeout: 2000 });
+                await page.waitForSelector('div[class*="relative flex items-center gap-x-xs"]', {timeout: 2000});
 
                 const isPro = await page.evaluate(() => {
                     const svgElement = document.querySelector('div[class*="relative flex aspect-square"] svg');
@@ -186,9 +192,9 @@ class PerplexityProvider {
                     return usernameElement ? usernameElement.textContent.trim() : null;
                 });
 
-                return { isPro, username, isIncognito: false };
+                return {isPro, username, isIncognito: false};
             } catch (error) {
-                return { isPro: false, username: null, isIncognito: false };
+                return {isPro: false, username: null, isIncognito: false};
             }
         }
     }
@@ -208,7 +214,7 @@ class PerplexityProvider {
                         const cookies = await page.cookies();
                         const sessionCookie = this.extractPerplexitySessionCookie(cookies);
                         isResolved = true;
-                        resolve({ sessionCookie, accountStatus });
+                        resolve({sessionCookie, accountStatus});
                     }
                 } catch (error) {
                     // 如果检查失败，继续等待
@@ -244,7 +250,7 @@ class PerplexityProvider {
             setTimeout(() => {
                 if (!isResolved) {
                     console.log('登录等待超时');
-                    resolve({ sessionCookie: null, accountStatus: null });
+                    resolve({sessionCookie: null, accountStatus: null});
                 }
             }, 300000);
 
@@ -284,7 +290,7 @@ class PerplexityProvider {
         return sessionCookie;
     }
 
-    async getCompletion({ username, messages, stream = false, proxyModel }) {
+    async getCompletion({username, messages, stream = false, proxyModel}) {
         if (this.networkMonitor.isNetworkBlocked()) {
             throw new Error("网络异常，请稍后再试");
         }
@@ -293,7 +299,7 @@ class PerplexityProvider {
             throw new Error(`用户 ${username} 的会话无效`);
         }
 
-        const { page } = session;
+        const {page} = session;
         const emitter = new EventEmitter();
 
         // 转换纯文本
@@ -317,7 +323,7 @@ class PerplexityProvider {
             query_source: "home",
         };
 
-        await page.addScriptTag({ url: 'https://cdn.socket.io/4.4.1/socket.io.min.js' });
+        await page.addScriptTag({url: 'https://cdn.socket.io/4.4.1/socket.io.min.js'});
 
         const ioExists = await page.evaluate(() => typeof io !== 'undefined');
         if (!ioExists) {
@@ -338,7 +344,7 @@ class PerplexityProvider {
         // 在浏览器上下文中建立 WebSocket 连接并发送消息
         await page.exposeFunction(callbackName, (event, data) => {
             if (event === "completion") {
-                const { id, text } = data;
+                const {id, text} = data;
                 emitter.emit("completion", id, text);
             } else if (event === "end") {
                 emitter.emit("end");
@@ -382,7 +388,10 @@ class PerplexityProvider {
                                     if (stream) {
                                         // 实时发送 chunk
                                         console.log(chunk); // 直接输出 chunk 内容
-                                        window[callbackName]("completion", { id: messagePayload.frontend_uuid, text: chunk });
+                                        window[callbackName]("completion", {
+                                            id: messagePayload.frontend_uuid,
+                                            text: chunk
+                                        });
                                     } else {
                                         // 累积 chunk
                                         accumulatedChunks += chunk;
@@ -394,7 +403,10 @@ class PerplexityProvider {
                                 if (!stream) {
                                     // 非流发送完整的响应
                                     console.log(accumulatedChunks);
-                                    window[callbackName]("completion", { id: messagePayload.frontend_uuid, text: accumulatedChunks });
+                                    window[callbackName]("completion", {
+                                        id: messagePayload.frontend_uuid,
+                                        text: accumulatedChunks
+                                    });
                                 }
                                 console.log("请求结束");
                                 window[callbackName]("end");
@@ -459,7 +471,7 @@ class PerplexityProvider {
         // 触发 'start'
         emitter.emit("start", messagePayload.frontend_uuid);
 
-        return { completion: emitter, cancel };
+        return {completion: emitter, cancel};
     }
 }
 

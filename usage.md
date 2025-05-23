@@ -4,9 +4,11 @@
 
 1. **安装必要的软件：**
 
-   - Node.js
-   - Git
-   - Python
+    - Node.js
+    - Git
+    - Python
+    - Visual C++ Build Tools（[下载链接](https://visualstudio.microsoft.com/zh-hans/visual-cpp-build-tools/)） 和勾上里面的
+      `c++桌面开发`[必须！]
 
 2. **获得一个 You.com 账户并订阅 Pro 或 Team 计划，登录账户。**
 
@@ -118,6 +120,7 @@
 set http_proxy=http://127.0.0.1:7890
 set https_proxy=http://127.0.0.1:7890
 ```
+
 *(启动浏览器闪退时，移除代理)*
 
 This project uses the local Chrome browser, which will automatically read and use the system proxy settings.
@@ -250,17 +253,17 @@ set ENABLE_MODE_ROTATION=true
   新版本如果弹出人机验证提示，用户只需要在30秒内点击完成CloudFlare的人机验证，并且等待程序继续处理即可。
 
   cloudflare有一个风控分数。这个和你的TLS指纹、浏览器指纹、IP地址声誉等等有关系
-  我们这个项目一直用的TLS指纹和浏览器指纹就非常可疑（都是自动化库和Node内置TLS），分数直接拉满 
+  我们这个项目一直用的TLS指纹和浏览器指纹就非常可疑（都是自动化库和Node内置TLS），分数直接拉满
   相当于已经预先有了30+30分数，剩下就看IP地址声誉（40分）你拿了几分
   （具体分数不详，只是举个例子）
   那如果你IP确实白，拿了0分，那你总共分数就是60。
   假设you那边设置了分数高于80的要跳验证码，那现在就没事
   如果你IP黑，拿了超过20分，那你就是>80分，你就要跳验证码，结果就是403
-  然后最近you觉得被薅狠了，或者别的啥原因，把这个分数设置成60以上的就要跳验证码 
+  然后最近you觉得被薅狠了，或者别的啥原因，把这个分数设置成60以上的就要跳验证码
   结果就我IP有点黑，不管怎么搞都过不去了。
-  但是同样的IP，你用正常的Google Chrome访问，就没问题，因为它的指纹非常干净，所以前面的指纹分数就很低 
+  但是同样的IP，你用正常的Google Chrome访问，就没问题，因为它的指纹非常干净，所以前面的指纹分数就很低
   就算加上IP声誉分他也没到那条线
-  总之以上是一个简化的版本，CF抗bot还有很多指标、很多策略 
+  总之以上是一个简化的版本，CF抗bot还有很多指标、很多策略
 
 ---
 
@@ -290,10 +293,10 @@ set ENABLE_MODE_ROTATION=true
 
 本项目仅供学习和研究使用，请遵守相关法律法规，勿用于任何商业或非法用途。
 
-This project is for learning and research purposes only. Please comply with relevant laws and regulations and do not use it for any commercial or illegal purposes.
+This project is for learning and research purposes only. Please comply with relevant laws and regulations and do not use
+it for any commercial or illegal purposes.
 
 ---
-
 
 # Usage Guide
 
@@ -301,10 +304,10 @@ This project is for learning and research purposes only. Please comply with rele
 
 1. **Install necessary software:**
 
-   - Node.js
-   - Git
-   - Python
-   - Visual C++ Build Tools ([Download link](https://visualstudio.microsoft.com/visual-cpp-build-tools/))
+    - Node.js
+    - Git
+    - Python
+    - Visual C++ Build Tools ([Download link](https://visualstudio.microsoft.com/visual-cpp-build-tools/))
 
 2. **Obtain a You.com account and subscribe to Pro or Team plan, then log in.**
 
@@ -408,7 +411,8 @@ This project is for learning and research purposes only. Please comply with rele
 
 ### Set Proxy
 
-If you need to set a proxy, please set the `http_proxy` and `https_proxy` environment variables in `start.bat`. For example:
+If you need to set a proxy, please set the `http_proxy` and `https_proxy` environment variables in `start.bat`. For
+example:
 
 ```batch
 set http_proxy=http://127.0.0.1:7890
@@ -419,7 +423,8 @@ This project uses the local Chrome browser, which will automatically read and us
 
 ### Set AI Model
 
-You can switch the model used by setting the `AI_MODEL` environment variable. Supported models include (please refer to the official website for the latest models):
+You can switch the model used by setting the `AI_MODEL` environment variable. Supported models include (please refer to
+the official website for the latest models):
 
 - `gpt_4o`
 - `gpt_4_turbo`
@@ -445,7 +450,8 @@ set AI_MODEL=claude_3_opus
 
 ### Enable Custom Chat Mode
 
-When enabled, it can shorten system message length, disable internet connection, reduce waiting time, which may help break through limitations.
+When enabled, it can shorten system message length, disable internet connection, reduce waiting time, which may help
+break through limitations.
 
 ```batch
 set USE_CUSTOM_MODE=true
@@ -461,7 +467,8 @@ set ENABLE_MODE_ROTATION=true
 
 ### Enable Tunnel Access
 
-If you need to access the local service from the external network, you can enable tunnel access. Both `ngrok` and `localtunnel` are supported.
+If you need to access the local service from the external network, you can enable tunnel access. Both `ngrok` and
+`localtunnel` are supported.
 
 **Using ngrok:**
 
@@ -509,7 +516,8 @@ If you need to access the local service from the external network, you can enabl
 
 - **About `ALLOW_NON_PRO` setting:**
 
-  If set to `true`, it allows the use of non-subscription accounts, but functionality will be limited and may not work properly.
+  If set to `true`, it allows the use of non-subscription accounts, but functionality will be limited and may not work
+  properly.
 
   ```batch
   set ALLOW_NON_PRO=true
@@ -517,7 +525,8 @@ If you need to access the local service from the external network, you can enabl
 
 - **About `CUSTOM_END_MARKER` setting:**
 
-  When the output cannot stop, you can set a custom termination marker. The program will automatically stop output after detecting this marker.
+  When the output cannot stop, you can set a custom termination marker. The program will automatically stop output after
+  detecting this marker.
 
   ```batch
   set CUSTOM_END_MARKER="<YOUR_END_MARKER>"
@@ -540,20 +549,27 @@ If you need to access the local service from the external network, you can enabl
   ```
 - **About 403 issue (mainly exists in old versions)**
 
-  This issue mainly exists in old versions. The new version is less likely to be blocked as it uses browser simulation for access.
+  This issue mainly exists in old versions. The new version is less likely to be blocked as it uses browser simulation
+  for access.
 
-  In the new version, if a CAPTCHA prompt pops up, users only need to complete the CloudFlare CAPTCHA within 30 seconds and wait for the program to continue processing.
+  In the new version, if a CAPTCHA prompt pops up, users only need to complete the CloudFlare CAPTCHA within 30 seconds
+  and wait for the program to continue processing.
 
-  Cloudflare has a risk control score. This is related to your TLS fingerprint, browser fingerprint, IP address reputation, etc.
-  The TLS fingerprint and browser fingerprint used in this project have always been very suspicious (all are automation libraries and Node built-in TLS), directly maxing out the score.
-  It's equivalent to having 30+30 points in advance, and the rest depends on how many points your IP address reputation takes (40 points)
+  Cloudflare has a risk control score. This is related to your TLS fingerprint, browser fingerprint, IP address
+  reputation, etc.
+  The TLS fingerprint and browser fingerprint used in this project have always been very suspicious (all are automation
+  libraries and Node built-in TLS), directly maxing out the score.
+  It's equivalent to having 30+30 points in advance, and the rest depends on how many points your IP address reputation
+  takes (40 points)
   (The specific scores are not detailed, just an example)
   So if your IP is indeed white and takes 0 points, your total score is 60.
   Suppose You sets that scores higher than 80 require CAPTCHA, then there's no problem now.
   If your IP is black and takes more than 20 points, then you're >80 points, you need to do CAPTCHA, resulting in 403.
-  Then recently You felt it was being abused too much, or for some other reason, set it so that scores above 60 require CAPTCHA.
+  Then recently You felt it was being abused too much, or for some other reason, set it so that scores above 60 require
+  CAPTCHA.
   As a result, my IP is a bit black, and I can't get through no matter what.
-  But with the same IP, if you access with normal Google Chrome, there's no problem, because its fingerprint is very clean, so the previous fingerprint score is very low.
+  But with the same IP, if you access with normal Google Chrome, there's no problem, because its fingerprint is very
+  clean, so the previous fingerprint score is very low.
   Even with the IP reputation score added, it doesn't reach that line.
   In short, the above is a simplified version, CF has many more indicators and strategies for anti-bot.
 
@@ -573,16 +589,19 @@ You can deploy using Docker, please refer to the `Dockerfile` in the project.
 
 **Q:** Why does the program prompt "Both modes have reached the request limit"?
 
-**A:** This may be because frequent requests have caused the mode to be temporarily disabled. It is recommended to wait for a while before trying again.
+**A:** This may be because frequent requests have caused the mode to be temporarily disabled. It is recommended to wait
+for a while before trying again.
 
 **Q:** How to switch models?
 
-**A:** Edit the `AI_MODEL` environment variable in `start.bat`, set it to the name of the model you want to use (can now be set in SillyTavern).
+**A:** Edit the `AI_MODEL` environment variable in `start.bat`, set it to the name of the model you want to use (can now
+be set in SillyTavern).
 
 ---
 
 ## Disclaimer
 
-This project is for learning and research purposes only. Please comply with relevant laws and regulations and do not use it for any commercial or illegal purposes.
+This project is for learning and research purposes only. Please comply with relevant laws and regulations and do not use
+it for any commercial or illegal purposes.
 
 ---
